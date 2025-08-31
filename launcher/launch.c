@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
     if(argc > 2) FATAL("[ERROR] passed too many files, expected only ONE.", -1);
 
     // check if given file exists or not assuming argv[1] is relative file name.
-    const char* elf_executable_i386 = argv[1];
+    char* elf_executable_i386 = argv[1];
     if(access(elf_executable_i386, F_OK) != 0)
         FATAL("[ERROR] provided file does not !exist. provide valid file.", -1);
     // check if we have reading permission on file or else exit by raising.

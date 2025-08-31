@@ -3,7 +3,7 @@ BUILD_DIR := ../bin
 LAUNC_SRC := launch.c
 LAUNC_OUT := launch.exe
 LAUNC_ARC := -m32
-LAUNC_FLG := Wl,-rpath=.
+LAUNC_FLG := -Wl,-rpath=.
 LAUNC_INC := ../loader
 LAUNC_LIB := $(BUILD_DIR)
 LOADR_NAM := _simpleloader
