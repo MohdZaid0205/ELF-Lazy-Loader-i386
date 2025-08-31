@@ -18,6 +18,12 @@ int         fd;     // stored file-descriptor, to open/close and read/seek when 
  *    -> matches to structure of ElfXX_Xhdr in itself. (so in - memory load works fine).
 */
 
+void loader_cleanup(){
+    SFREE(ehdr);    // free heap allocated elf-header container
+    SFREE(phdr);    // free heap allocated program header container
+    close(fd);      // close file that reading executable
+}
+
 void load_and_run_elf(char* elf_executable_i386_mle)
 {
     // scope open elf executable i386 arch and little-endian format in read-only mode.
@@ -75,6 +81,6 @@ void load_and_run_elf(char* elf_executable_i386_mle)
     lseek(fd, phdr->p_offset, SEEK_SET); read(fd, virtual, phdr->p_filesz);
 
     // construct payload/hook to funstion int _start(void) { ... } to execute the payload.
-    int (*_start)(void) = (int (*)(void))(virtual + (ehdr->e_entry - phdr->p_offset));
+    int (*_start)(void) = (int (*)(void))(virtual + (ehdr->e_entry - phdr->p_vaddr));
     printf("User _start return value = %d\n", _start());
 }
