@@ -4,6 +4,7 @@
 Elf32_Ehdr* ehdr;   // stores elf header, see [>_] for informations regarding readings.  
 Elf32_Phdr* phdr;   // stores program header, see [>_] for informations on structure.
 int         fd;     // stored file-descriptor, to open/close and read/seek when needed.
+void*       vm;     // virtual map for protected memory and related information.
 
 // To display exceptions and exiting at runtime defined macros  are to be used along
 // if statements or assertions to make it easer to log exceptions and exit at fatal flaw.
@@ -19,9 +20,12 @@ int         fd;     // stored file-descriptor, to open/close and read/seek when 
 */
 
 void loader_cleanup(){
+    int status = munmap(vm, phdr->p_memsz); // deallocate virtual map
     SFREE(ehdr);    // free heap allocated elf-header container
     SFREE(phdr);    // free heap allocated program header container
     close(fd);      // close file that reading executable
+    if (status != 0 )
+        ERROR("failed while trying to munmap virtual address allocated by mmap", -1);
 }
 
 void load_and_run_elf(char* elf_executable_i386_mle)
@@ -74,13 +78,13 @@ void load_and_run_elf(char* elf_executable_i386_mle)
     }
     
     // create a memory_space with execution permission and valid permissions to run _start.
-    char *virtual = mmap(NULL, phdr->p_memsz, PROT_READ|PROT_EXEC|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
-    if (!virtual) CFARF("[ERROR] cannot allocate memory with read, write and exec permissions.", fd);
+    vm = mmap(NULL, phdr->p_memsz, PROT_READ|PROT_EXEC|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
+    if (!vm) CFARF("[ERROR] cannot allocate memory with read, write and exec permissions.", fd);
 
     // load instructions from executable to vistually-allocated memory with exec permission
-    lseek(fd, phdr->p_offset, SEEK_SET); read(fd, virtual, phdr->p_filesz);
+    lseek(fd, phdr->p_offset, SEEK_SET); read(fd, vm, phdr->p_filesz);
 
     // construct payload/hook to funstion int _start(void) { ... } to execute the payload.
-    int (*_start)(void) = (int (*)(void))(virtual + (ehdr->e_entry - phdr->p_vaddr));
+    int (*_start)(void) = (int (*)(void))(vm + (ehdr->e_entry - phdr->p_vaddr));
     printf("User _start return value = %d\n", _start());
 }
