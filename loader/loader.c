@@ -1,9 +1,13 @@
 #include "loader.h"
 
+// define aliases for types (just for cleanliness purposes). no cahnge in workings.
+#define uInt32 uint32_t
+#define sInt32 int32_t
+
 // important headers and file to be loaded, executed and cleaned in corresponding functions
 Elf32_Ehdr* ehdr;   // stores elf header, see [>_] for informations regarding readings.  
 Elf32_Phdr* phdr;   // stores program header, see [>_] for informations on structure.
-int         fd;     // stored file-descriptor, to open/close and read/seek when needed.
+sInt32        fd;   // stored file-descriptor, to open/close and read/seek when needed.
 
 // To display exceptions and exiting at runtime defined macros  are to be used along
 // if statements or assertions to make it easer to log exceptions and exit at fatal flaw.
@@ -28,8 +32,8 @@ void load_and_run_elf(char* elf_executable_i386_mle)
 {
     // scope open elf executable i386 arch and little-endian format in read-only mode.
     fd = open(elf_executable_i386_mle, O_RDONLY);
-    int elf32_ehdr_size = sizeof(Elf32_Ehdr);
-    int elf32_phdr_size = sizeof(Elf32_Phdr);
+    uInt32 elf32_ehdr_size = sizeof(Elf32_Ehdr);
+    uInt32 elf32_phdr_size = sizeof(Elf32_Phdr);
 
     // make space to load byte-ordered elf header in allocated memory and deal with it.
     ehdr = (Elf32_Ehdr *)malloc(elf32_ehdr_size);
@@ -54,33 +58,33 @@ void load_and_run_elf(char* elf_executable_i386_mle)
     // clearly we can proceed with reading each segment as fd is at top of phdr after reading ehdr.
     // i dont think this is safe to do with this approach, what if we end up reading garbage.
     // reset the fd and then go to offset provided by ehdr->e_phoff and then read each segment.
-    int program_header_offset = ehdr->e_phoff; lseek(fd, program_header_offset, SEEK_SET);
+    uInt32 program_header_offset = ehdr->e_phoff; lseek(fd, program_header_offset, SEEK_SET);
 
     // make space to load byte-ordered program header in allocated memory and deal with it.
-    phdr = (Elf32_Phdr *)malloc(elf32_phdr_size);
+    phdr = (Elf32_Phdr *)malloc(elf32_phdr_size*ehdr->e_phnum);
     if (!ehdr) CFARF("[ERROR] Failed to allocate memory for Elf32_Phdr, try again.", fd);
 
-    // read all segments and choose the one containing the entrypoint and store that segment.
-    for (int i = 0; i < ehdr->e_phnum; i++){
-        int phdr_status = read(fd, phdr, elf32_phdr_size);
+    // read all segments and store header for that segments for further use in programme.
+    for (uInt32 i = 0; i < ehdr->e_phnum; i++){
+        int phdr_status = read(fd, phdr + (i*elf32_phdr_size), elf32_phdr_size);
         if (phdr_status != elf32_phdr_size) CFARF("[ERROR] failed to read Elf32_Phdr*.", fd);
-
-        // break if virtual address of entrypoint is within the scope of current segment.
-        int is_loadable = phdr->p_type == PT_LOAD;
-        int is_gt_range = phdr->p_vaddr <= ehdr->e_entry;
-        int is_lt_range = ehdr->e_entry <= (phdr->p_vaddr + phdr->p_filesz);
-        if (is_loadable && is_gt_range && is_lt_range)
-            break;
     }
     
-    // create a memory_space with execution permission and valid permissions to run _start.
-    char *virtual = mmap(NULL, phdr->p_memsz, PROT_READ|PROT_EXEC|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
-    if (!virtual) CFARF("[ERROR] cannot allocate memory with read, write and exec permissions.", fd);
-
-    // load instructions from executable to vistually-allocated memory with exec permission
-    lseek(fd, phdr->p_offset, SEEK_SET); read(fd, virtual, phdr->p_filesz);
-
+    // for each segment that need to be loaded into virtual address space, allocate segment info
+    for (int i = 0; i < ehdr->e_phnum; i++){
+        Elf32_Phdr* current = phdr + (i*elf32_phdr_size);
+        if (current->p_type != PT_LOAD) continue;
+        // align items to nearest page boundries, (finding page boundries).
+        uInt32 bound_str = current->p_vaddr - (current->p_vaddr % current->p_align);
+        uInt32 bound_end = current->p_vaddr + current->p_memsz;
+        bound_end = bound_end - (bound_end % current->p_align) + current->p_align;
+        // allocate this memory and copy required data from executable into virtual memory
+        void* allocated = mmap((void*)bound_str, bound_end - bound_str, PROT_READ|PROT_EXEC|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
+        if (!allocated) CFARF("[ERROR] cannot allocate memory with read, write and exec permissions.", fd);
+        lseek(fd, current->p_offset, SEEK_SET); read(fd, allocated, phdr->p_filesz);
+    }
+    
     // construct payload/hook to funstion int _start(void) { ... } to execute the payload.
-    int (*_start)(void) = (int (*)(void))(virtual + (ehdr->e_entry - phdr->p_vaddr));
+    sInt32 (*_start)(void) = (sInt32 (*)(void))((void*)ehdr->e_entry);
     printf("User _start return value = %d\n", _start());
 }
