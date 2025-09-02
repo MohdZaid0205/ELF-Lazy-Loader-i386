@@ -1,7 +1,7 @@
 
 BUILD_DIR := ../bin
 LAUNC_SRC := launch.c
-LAUNC_OUT := launch.exe
+LAUNC_OUT := launch
 LAUNC_ARC := -m32
 LAUNC_FLG := -Wl,-rpath=.
 LAUNC_INC := ../loader
