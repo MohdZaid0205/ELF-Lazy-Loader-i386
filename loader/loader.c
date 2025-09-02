@@ -44,7 +44,7 @@ void load_and_run_elf(char* elf_executable_i386_mle)
     if (ehdr_status != elf32_ehdr_size) CFARF("[ERROR] failed to read Elf32_Ehdr*.", fd);
 
     // no need to execute if given source is not an executable file, ignore the source.
-    if (ehdr->e_type != ET_EXEC|ET_DYN)
+    if ((ehdr->e_type & (ET_EXEC|ET_DYN)) == 0)
         CFARF("[ERROR] given elf-i386 file is not an executable file, !EXEC.", fd);
 
     // on some modern systems even dynamic files can execute properly, it is intended feature.
