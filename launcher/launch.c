@@ -2,7 +2,7 @@
 
 // To display exceptions and exiting at runtime defined macros  are to be used along
 // if statements or assertions to make it easer to log exceptions and exit at fatal flaw.
-#define ERROR(message, x) { printf(message);  }             // to display error message.
+#define ERROR(message, x) { printf("%s\n", message);  }     // to display error message.
 #define FATAL(message, x) { ERROR(message, x); exit(x); }   // to display and exit fatal.
 #define CFARF(message, f) { close(f); FATAL(message,-1);}   // to close file and raise.
 

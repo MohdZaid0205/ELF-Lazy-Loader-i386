@@ -25,7 +25,7 @@ void loader_cleanup(){
     SFREE(phdr);    // free heap allocated program header container
     close(fd);      // close file that reading executable
     if (status != 0 )
-        ERROR("failed while trying to munmap virtual address allocated by mmap", -1);
+        ERROR("[ERROR] failed while trying to munmap virtual address allocated by mmap", -1);
 }
 
 void load_and_run_elf(char* elf_executable_i386_mle)
@@ -42,6 +42,14 @@ void load_and_run_elf(char* elf_executable_i386_mle)
     // read file and load byte=ordered elf header into the allocated space previously allocated.
     int ehdr_status = read(fd, ehdr, elf32_ehdr_size);
     if (ehdr_status != elf32_ehdr_size) CFARF("[ERROR] failed to read Elf32_Ehdr*.", fd);
+
+    // no need to execute if given source is not an executable file, ignore the source.
+    if (ehdr->e_type != ET_EXEC|ET_DYN)
+        CFARF("[ERROR] given elf-i386 file is not an executable file, !EXEC.", fd);
+
+    // on some modern systems even dynamic files can execute properly, it is intended feature.
+    if (ehdr->e_type == ET_DYN)
+        ERROR("[WARNS] given elf-i386 is DYN not EXEC, still proceeding with execution.", -1);
 
     // we can proceed on fact that if we shift file pointer by size of Elf-header we are now
     // at start of program headers and each entity size can be taken from @var ehdr->e_phentsize.
