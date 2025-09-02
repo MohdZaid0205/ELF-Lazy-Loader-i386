@@ -23,8 +23,24 @@ sInt32        fd;   // stored file-descriptor, to open/close and read/seek when 
 */
 
 void loader_cleanup(){
+    
+    for (int i = 0; i < ehdr->e_phnum; i++){
+        Elf32_Phdr* active = phdr + (i*sizeof(Elf32_Phdr));
+        if (active->p_type != PT_LOAD) continue;
+        
+        // align items to nearest page boundries, (finding page boundries).
+        uInt32 bound_str = active->p_vaddr - (active->p_vaddr % active->p_align);
+        uInt32 bound_end = active->p_vaddr + active->p_memsz;
+        bound_end = bound_end - (bound_end % active->p_align) + active->p_align;
+        uInt32 bound_len = bound_end - bound_str;
+
+        // release virually allocated pages
+        int deallocated = munmap((void*)bound_str, bound_len);
+        if (deallocated != 0) CFARF("[ERROR] cannot de-allocate memory previously paged.", fd);
+    }
+    
     SFREE(ehdr);    // free heap allocated elf-header container
-    SFREE(phdr);    // free heap allocated program header container
+    SFREE(phdr);    // free heap allocated programme-header container
     close(fd);      // close file that reading executable
 }
 
@@ -72,18 +88,29 @@ void load_and_run_elf(char* elf_executable_i386_mle)
     
     // for each segment that need to be loaded into virtual address space, allocate segment info
     for (int i = 0; i < ehdr->e_phnum; i++){
-        Elf32_Phdr* current = phdr + (i*elf32_phdr_size);
-        if (current->p_type != PT_LOAD) continue;
+        Elf32_Phdr* active = phdr + (i*elf32_phdr_size);
+        if (active->p_type != PT_LOAD) continue;
+        
         // align items to nearest page boundries, (finding page boundries).
-        uInt32 bound_str = current->p_vaddr - (current->p_vaddr % current->p_align);
-        uInt32 bound_end = current->p_vaddr + current->p_memsz;
-        bound_end = bound_end - (bound_end % current->p_align) + current->p_align;
-        // allocate this memory and copy required data from executable into virtual memory
-        void* allocated = mmap((void*)bound_str, bound_end - bound_str, PROT_READ|PROT_EXEC|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
+        uInt32 bound_str = active->p_vaddr - (active->p_vaddr % active->p_align);
+        uInt32 bound_end = active->p_vaddr + active->p_memsz;
+        bound_end = bound_end - (bound_end % active->p_align) + active->p_align;
+        uInt32 bound_len = bound_end - bound_str;
+
+        // get feasable protections from program header and convert them to mmap permission types.
+        uInt32 protections = PROT_READ|PROT_EXEC|PROT_WRITE;
+
+        lseek(fd, active->p_offset, SEEK_SET);
+        // allocate virtual address and handle failed allocation cases, follow up by copying data.
+        void* allocated = mmap((void*)bound_str, bound_len, protections, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
         if (!allocated) CFARF("[ERROR] cannot allocate memory with read, write and exec permissions.", fd);
-        lseek(fd, current->p_offset, SEEK_SET); read(fd, allocated, phdr->p_filesz);
+        lseek(fd, active->p_offset, SEEK_SET); read(fd, allocated, phdr->p_filesz);
+        
+        // this is to initialize .bss section with value 0, and overrite if in any case anything had been written.
+        if (active->p_memsz > active->p_filesz) 
+            memset((void*)(active->p_vaddr + active->p_filesz), 0, active->p_memsz - active->p_filesz);
     }
-    
+
     // construct payload/hook to funstion int _start(void) { ... } to execute the payload.
     sInt32 (*_start)(void) = (sInt32 (*)(void))((void*)ehdr->e_entry);
     printf("User _start return value = %d\n", _start());
