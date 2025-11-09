@@ -1,0 +1,3 @@
+All code among all the branches of this repository was done by Mohd Zaid (2024353).
+
+repo link https://github.com/MohdZaid0205/ELF-Loader-i386

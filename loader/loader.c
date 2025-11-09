@@ -5,6 +5,7 @@ Elf32_Ehdr* ehdr;   // stores elf header, see [>_] for informations regarding re
 Elf32_Phdr* phdr;   // stores program header, see [>_] for informations on structure.
 sInt32        fd;   // stored file-descriptor, to open/close and read/seek when needed.
 
+
 // global variables to count required loader informations regarding paging and falults.
 volatile uInt32 page_fault_count = 0;   // number of page faults encountered by loader.
 volatile uInt32 page_alloc_count = 0;   // number of times new page was allocated for .
@@ -41,6 +42,8 @@ void loader_cleanup(){
     SFREE(ehdr);    // free heap allocated elf-header container
     SFREE(phdr);    // free heap allocated programme-header container
     close(fd);      // close file that reading executable
+    if (status != 0 )
+        ERROR("[ERROR] failed while trying to munmap virtual address allocated by mmap", -1);
 }
 
 void load_and_run_elf(char* elf_executable_i386_mle)
