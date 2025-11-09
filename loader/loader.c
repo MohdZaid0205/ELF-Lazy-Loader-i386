@@ -8,6 +8,7 @@ sInt32        fd;   // stored file-descriptor, to open/close and read/seek when 
 // global variables to count required loader informations regarding paging and falults.
 volatile uInt32 page_fault_count = 0;   // number of page faults encountered by loader.
 volatile uInt32 page_alloc_count = 0;   // number of times new page was allocated for .
+volatile uInt32 page_inter_frags = 0;   // total internal fragmentation over all pages.
 
 // helper masking bits specifically for page alignment and retreiving offset of address.
 // these constants are only viable for page size = 0x1000 ie size=4kB
@@ -125,6 +126,8 @@ void load_and_run_elf(char* elf_executable_i386_mle)
     // construct payload/hook to funstion int _start(void) { ... } to execute the payload.
     sInt32 (*_start)(void) = (sInt32 (*)(void))((void*)ehdr->e_entry);
     printf("User _start return value = %d\n", _start());
-    printf("TOTAL PAGE FAULts: %d\n", page_fault_count);
-    printf("TOTAL PAGE ALLOCS: %d\n", page_alloc_count);
+
+    DEBUG(("total PAGE FAULTS: %d  \n", page_fault_count));
+    DEBUG(("total PAGE ALLOCS: %d  \n", page_alloc_count));
+    DEBUG(("total IN-FRAGMENT: %dKB\n", page_inter_frags/0x1000));
 }

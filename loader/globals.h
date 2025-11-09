@@ -21,6 +21,11 @@
 #define FATAL(message, x) { ERROR(message, x); exit(x); }   // to display & exit fatal.
 #define CFARF(message, f) { close(f); FATAL(message,-1);}   // to close file and raise.
 #define SFREE(pointer) if(pointer){ free(pointer); }        // to clean allocated memory.
+#ifdef LOADER_DEBUG
+    #define DEBUG(message) printf message;
+#else
+    #define DEBUG(message)
+#endif
 
 #ifndef XINT32
 #define XINT32
@@ -35,6 +40,7 @@ extern sInt32        fd;                    // stores file descriptor of opened 
 
 extern volatile uInt32 page_fault_count;    // number of page FAULT OCCURED.
 extern volatile uInt32 page_alloc_count;    // number of page ALLOCATED.
+extern volatile uInt32 page_inter_frags;    // internal fragmentation in kB
 
 extern const uInt32 virtual_page_alignment_mask;
 extern const uInt32 virtual_offset_address_mask;

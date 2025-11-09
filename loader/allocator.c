@@ -45,7 +45,10 @@ uInt32 allocate_page(uInt32 vaddr){
 
         if (mprotect((void*)vaddr_base, 0x1000, protection) == -1)
             CFARF("[ERROR] protection for newly allocated page failed to add defined permissions.", fd);
+
         isallocated = 0x0001;
+        if (isallocated == 1)
+            page_inter_frags += (0x1000 - phdr[i].p_memsz % 0x1000);
     }
 
     if (isallocated == 0)
