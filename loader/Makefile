@@ -7,5 +7,7 @@ LOADR_FLG := -fPIC -shared -I./loader
 
 default:
 	gcc $(LOADR_FLG) $(LOADR_ARC) -o $(BUILD_DIR)/$(LOADR_OUT) $(LOADR_SRC)
+debug:
+	gcc $(LOADR_FLG) $(LOADR_ARC) -o $(BUILD_DIR)/$(LOADR_OUT) $(LOADR_SRC) -DLOADER_DEBUG
 clean:
 	rm -f $(BUILD_DIR)/$(LOADR_OUT)
