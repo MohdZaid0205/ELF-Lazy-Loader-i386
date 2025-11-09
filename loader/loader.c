@@ -4,17 +4,27 @@
 #define uInt32 uint32_t
 #define sInt32 int32_t
 
-// important headers and file to be loaded, executed and cleaned in corresponding functions
+// important headers and file to be loaded, executed and cleaned in corresponding func.
 Elf32_Ehdr* ehdr;   // stores elf header, see [>_] for informations regarding readings.  
 Elf32_Phdr* phdr;   // stores program header, see [>_] for informations on structure.
 sInt32        fd;   // stored file-descriptor, to open/close and read/seek when needed.
 
+// global variables to count required loader informations regarding paging and falults.
+volatile uInt32 page_fault_count = 0;   // number of page faults encountered by loader.
+volatile uInt32 page_alloc_count = 0;   // number of times new page was allocated for .
+
 // To display exceptions and exiting at runtime defined macros  are to be used along
-// if statements or assertions to make it easer to log exceptions and exit at fatal flaw.
+// if statements or assertions to make it easer to log exceptions and exit at fatal 
+// flaw. some extra MACROS for safe free calls for pointers
 #define ERROR(message, x) { printf("%s\n", message);  }     // to display error message.
-#define FATAL(message, x) { ERROR(message, x); exit(x); }   // to display and exit fatal.
+#define FATAL(message, x) { ERROR(message, x); exit(x); }   // to display & exit fatal.
 #define CFARF(message, f) { close(f); FATAL(message,-1);}   // to close file and raise.
 #define SFREE(pointer) if(pointer){ free(pointer); }        // to clean allocated memory.
+
+// helper masking bits specifically for page alignment and retreiving offset of address.
+// these constants are only viable for page size = 0x1000 ie size=4kB
+const uInt32 virtual_page_alignment_mask = 0xfffff000;
+const uInt32 virtual_offset_address_mask = 0x00000fff;
 
 /** [>_] How this solution load elf-header directly from executable and why it works?
  *    -> assembler does not dump in memory content of Xhdr directly in executable/objects.
@@ -94,32 +104,29 @@ void load_and_run_elf(char* elf_executable_i386_mle)
         if (phdr_status != elf32_phdr_size) CFARF("[ERROR] failed to read Elf32_Phdr*.", fd);
     }
     
-    // for each segment that need to be loaded into virtual address space, allocate segment info
-    for (int i = 0; i < ehdr->e_phnum; i++){
-        Elf32_Phdr* active = phdr + (i*elf32_phdr_size);
-        if (active->p_type != PT_LOAD) continue;
-        
-        // align items to nearest page boundries, (finding page boundries).
-        uInt32 bound_str = active->p_vaddr - (active->p_vaddr % active->p_align);
-        uInt32 bound_end = active->p_vaddr + active->p_memsz;
-        bound_end = bound_end - (bound_end % active->p_align) + active->p_align;
-        uInt32 bound_len = bound_end - bound_str;
+    // in order to lazily load pages, we need to map exactly what section and what page is to
+    // be loaded from File, following is a calculation that is necessary for page fault resolution.
+    // 
+    // Program Headers:
+    //      Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+    //      LOAD           0x000000 0x08048000 0x08048000 0x00118 0x00118 R   0x1000
+    //      LOAD           0x001000 0x08049000 0x08049000 0x00046 0x00046 R E 0x1000
+    //      LOAD           0x002000 0x0804a000 0x0804a000 0x00074 0x00074 R   0x1000
+    //      NOTE           0x0000f4 0x080480f4 0x080480f4 0x00024 0x00024 R   0x4
+    //      GNU_EH_FRAME   0x002000 0x0804a000 0x0804a000 0x0001c 0x0001c R   0x4
+    //      GNU_STACK      0x000000 0x00000000 0x00000000 0x00000 0x00000 RW  0x10
+    //
+    // in order to resolve page fault occured due to unallocated virtual address, we take VAddr
+    // and do the following calculation, to verify what should be page address to be allocated
+    // and allocate fixes pagesize=4kb with required permissions to page.
+    //
+    //      VIR_PAGE_ADDR = VAddr & (0xffffffff ^ 0x0fff)
+    //      VIR_OFFSET_IN = VAddr & 0x0fff < 0x1000 ? VAddr & (0x0fff) : ERR
+    //
+    // then allocate exactly one page with provided base = VIR_PAGE_ADDR and bound = 0x1000
+    // base = VIR_PAGE_ADDR as in i386, VIR and PHY ADDR are considerd same and within LIMIT
+    
 
-        // get feasable protections from program header and convert them to mmap permission types.
-        uInt32 protections = PROT_READ|PROT_EXEC|PROT_WRITE;
 
-        lseek(fd, active->p_offset, SEEK_SET);
-        // allocate virtual address and handle failed allocation cases, follow up by copying data.
-        void* allocated = mmap((void*)bound_str, bound_len, protections, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
-        if (!allocated) CFARF("[ERROR] cannot allocate memory with read, write and exec permissions.", fd);
-        lseek(fd, active->p_offset, SEEK_SET); read(fd, allocated, phdr->p_filesz);
-        
-        // this is to initialize .bss section with value 0, and overrite if in any case anything had been written.
-        if (active->p_memsz > active->p_filesz) 
-            memset((void*)(active->p_vaddr + active->p_filesz), 0, active->p_memsz - active->p_filesz);
-    }
-
-    // construct payload/hook to funstion int _start(void) { ... } to execute the payload.
-    sInt32 (*_start)(void) = (sInt32 (*)(void))((void*)ehdr->e_entry);
     printf("User _start return value = %d\n", _start());
 }
