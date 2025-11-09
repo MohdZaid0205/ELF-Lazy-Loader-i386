@@ -19,6 +19,11 @@ compile:
 	make -C $(LOADR_DIR) $(BUILD_TYP)  
 	make -C $(LAUNC_DIR) $(BUILD_TYP)
 	make -C $(TESTS_DIR) $(TESTS_TYP)
+debug:
+	# make all sub directories using default.
+	make -C $(LOADR_DIR) debug
+	make -C $(LAUNC_DIR) $(BUILD_TYP)
+	make -C $(TESTS_DIR) $(TESTS_TYP)
 clean:
     # clean all sub directories using clean.
 	make -C $(LOADR_DIR) clean

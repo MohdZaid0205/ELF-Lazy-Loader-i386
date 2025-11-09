@@ -1,17 +1,20 @@
 #include "loader.h"
 
-// important headers and file to be loaded, executed and cleaned in corresponding functions
+// important headers and file to be loaded, executed and cleaned in corresponding func.
 Elf32_Ehdr* ehdr;   // stores elf header, see [>_] for informations regarding readings.  
 Elf32_Phdr* phdr;   // stores program header, see [>_] for informations on structure.
-int         fd;     // stored file-descriptor, to open/close and read/seek when needed.
-void*       vm;     // virtual map for protected memory and related information.
+sInt32        fd;   // stored file-descriptor, to open/close and read/seek when needed.
 
-// To display exceptions and exiting at runtime defined macros  are to be used along
-// if statements or assertions to make it easer to log exceptions and exit at fatal flaw.
-#define ERROR(message, x) { printf("%s\n", message);  }     // to display error message.
-#define FATAL(message, x) { ERROR(message, x); exit(x); }   // to display and exit fatal.
-#define CFARF(message, f) { close(f); FATAL(message,-1);}   // to close file and raise.
-#define SFREE(pointer) if(pointer){ free(pointer); }        // to clean allocated memory.
+
+// global variables to count required loader informations regarding paging and falults.
+volatile uInt32 page_fault_count = 0;   // number of page faults encountered by loader.
+volatile uInt32 page_alloc_count = 0;   // number of times new page was allocated for .
+volatile uInt32 page_inter_frags = 0;   // total internal fragmentation over all pages.
+
+// helper masking bits specifically for page alignment and retreiving offset of address.
+// these constants are only viable for page size = 0x1000 ie size=4kB
+const uInt32 virtual_page_alignment_mask = 0xfffff000;
+const uInt32 virtual_offset_address_mask = 0x00000fff;
 
 /** [>_] How this solution load elf-header directly from executable and why it works?
  *    -> assembler does not dump in memory content of Xhdr directly in executable/objects.
@@ -20,9 +23,24 @@ void*       vm;     // virtual map for protected memory and related information.
 */
 
 void loader_cleanup(){
-    int status = munmap(vm, phdr->p_memsz); // deallocate virtual map
+    
+    for (int i = 0; i < ehdr->e_phnum; i++){
+        Elf32_Phdr* active = phdr + (i*sizeof(Elf32_Phdr));
+        if (active->p_type != PT_LOAD) continue;
+        
+        // align items to nearest page boundries, (finding page boundries).
+        uInt32 bound_str = active->p_vaddr - (active->p_vaddr % active->p_align);
+        uInt32 bound_end = active->p_vaddr + active->p_memsz;
+        bound_end = bound_end - (bound_end % active->p_align) + active->p_align;
+        uInt32 bound_len = bound_end - bound_str;
+
+        // release virually allocated pages
+        int deallocated = munmap((void*)bound_str, bound_len);
+        if (deallocated != 0) CFARF("[ERROR] cannot de-allocate memory previously paged.", fd);
+    }
+    
     SFREE(ehdr);    // free heap allocated elf-header container
-    SFREE(phdr);    // free heap allocated program header container
+    SFREE(phdr);    // free heap allocated programme-header container
     close(fd);      // close file that reading executable
     if (status != 0 )
         ERROR("[ERROR] failed while trying to munmap virtual address allocated by mmap", -1);
@@ -32,8 +50,8 @@ void load_and_run_elf(char* elf_executable_i386_mle)
 {
     // scope open elf executable i386 arch and little-endian format in read-only mode.
     fd = open(elf_executable_i386_mle, O_RDONLY);
-    int elf32_ehdr_size = sizeof(Elf32_Ehdr);
-    int elf32_phdr_size = sizeof(Elf32_Phdr);
+    uInt32 elf32_ehdr_size = sizeof(Elf32_Ehdr);
+    uInt32 elf32_phdr_size = sizeof(Elf32_Phdr);
 
     // make space to load byte-ordered elf header in allocated memory and deal with it.
     ehdr = (Elf32_Ehdr *)malloc(elf32_ehdr_size);
@@ -66,33 +84,53 @@ void load_and_run_elf(char* elf_executable_i386_mle)
     // clearly we can proceed with reading each segment as fd is at top of phdr after reading ehdr.
     // i dont think this is safe to do with this approach, what if we end up reading garbage.
     // reset the fd and then go to offset provided by ehdr->e_phoff and then read each segment.
-    int program_header_offset = ehdr->e_phoff; lseek(fd, program_header_offset, SEEK_SET);
+    uInt32 program_header_offset = ehdr->e_phoff; lseek(fd, program_header_offset, SEEK_SET);
 
     // make space to load byte-ordered program header in allocated memory and deal with it.
-    phdr = (Elf32_Phdr *)malloc(elf32_phdr_size);
+    phdr = (Elf32_Phdr *)malloc(elf32_phdr_size*ehdr->e_phnum);
     if (!ehdr) CFARF("[ERROR] Failed to allocate memory for Elf32_Phdr, try again.", fd);
 
-    // read all segments and choose the one containing the entrypoint and store that segment.
-    for (int i = 0; i < ehdr->e_phnum; i++){
-        int phdr_status = read(fd, phdr, elf32_phdr_size);
+    // read all segments and store header for that segments for further use in programme.
+    for (uInt32 i = 0; i < ehdr->e_phnum; i++){
+        int phdr_status = read(fd, &phdr[i], elf32_phdr_size);
         if (phdr_status != elf32_phdr_size) CFARF("[ERROR] failed to read Elf32_Phdr*.", fd);
-
-        // break if virtual address of entrypoint is within the scope of current segment.
-        int is_loadable = phdr->p_type == PT_LOAD;
-        int is_gt_range = phdr->p_vaddr <= ehdr->e_entry;
-        int is_lt_range = ehdr->e_entry <= (phdr->p_vaddr + phdr->p_filesz);
-        if (is_loadable && is_gt_range && is_lt_range)
-            break;
     }
     
-    // create a memory_space with execution permission and valid permissions to run _start.
-    vm = mmap(NULL, phdr->p_memsz, PROT_READ|PROT_EXEC|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, 0, 0);
-    if (!vm) CFARF("[ERROR] cannot allocate memory with read, write and exec permissions.", fd);
+    // in order to lazily load pages, we need to map exactly what section and what page is to
+    // be loaded from File, following is a calculation that is necessary for page fault resolution.
+    // 
+    // Program Headers:
+    //      Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+    //      LOAD           0x000000 0x08048000 0x08048000 0x00118 0x00118 R   0x1000
+    //      LOAD           0x001000 0x08049000 0x08049000 0x00046 0x00046 R E 0x1000
+    //      LOAD           0x002000 0x0804a000 0x0804a000 0x00074 0x00074 R   0x1000
+    //      NOTE           0x0000f4 0x080480f4 0x080480f4 0x00024 0x00024 R   0x4
+    //      GNU_EH_FRAME   0x002000 0x0804a000 0x0804a000 0x0001c 0x0001c R   0x4
+    //      GNU_STACK      0x000000 0x00000000 0x00000000 0x00000 0x00000 RW  0x10
+    //
+    // in order to resolve page fault occured due to unallocated virtual address, we take VAddr
+    // and do the following calculation, to verify what should be page address to be allocated
+    // and allocate fixes pagesize=4kb with required permissions to page.
+    //
+    //      VIR_PAGE_ADDR = VAddr & (0xffffffff ^ 0x0fff)
+    //      VIR_OFFSET_IN = VAddr & 0x0fff < 0x1000 ? VAddr & (0x0fff) : ERR
+    //
+    // then allocate exactly one page with provided base = VIR_PAGE_ADDR and bound = 0x1000
+    // base = VIR_PAGE_ADDR as in i386, VIR and PHY ADDR are considerd same and within LIMIT
+    
+    // createa a segmentaion fault handler and assign it to sigsegv, to handle segmentation.
+    struct sigaction sa; memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = segmentation_fault_handler;
+    sa.sa_flags = SA_SIGINFO; sigemptyset(&sa.sa_mask);
 
-    // load instructions from executable to vistually-allocated memory with exec permission
-    lseek(fd, phdr->p_offset, SEEK_SET); read(fd, vm, phdr->p_filesz);
+    if (sigaction(SIGSEGV, &sa, NULL) == -1)
+        FATAL("[ERROR] sigaction failed failed to assign function for SIG SEGMENTATION.", -1);
 
     // construct payload/hook to funstion int _start(void) { ... } to execute the payload.
-    int (*_start)(void) = (int (*)(void))(vm + (ehdr->e_entry - phdr->p_vaddr));
+    sInt32 (*_start)(void) = (sInt32 (*)(void))((void*)ehdr->e_entry);
     printf("User _start return value = %d\n", _start());
+
+    DEBUG(("total PAGE FAULTS: %d  \n", page_fault_count));
+    DEBUG(("total PAGE ALLOCS: %d  \n", page_alloc_count));
+    DEBUG(("total IN-FRAGMENT: %dKB\n", page_inter_frags/0x1000));
 }
