@@ -42,8 +42,6 @@ void loader_cleanup(){
     SFREE(ehdr);    // free heap allocated elf-header container
     SFREE(phdr);    // free heap allocated programme-header container
     close(fd);      // close file that reading executable
-    if (status != 0 )
-        ERROR("[ERROR] failed while trying to munmap virtual address allocated by mmap", -1);
 }
 
 void load_and_run_elf(char* elf_executable_i386_mle)
