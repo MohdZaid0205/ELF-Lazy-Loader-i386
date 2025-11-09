@@ -1,9 +1,5 @@
 #include "loader.h"
 
-// define aliases for types (just for cleanliness purposes). no cahnge in workings.
-#define uInt32 uint32_t
-#define sInt32 int32_t
-
 // important headers and file to be loaded, executed and cleaned in corresponding func.
 Elf32_Ehdr* ehdr;   // stores elf header, see [>_] for informations regarding readings.  
 Elf32_Phdr* phdr;   // stores program header, see [>_] for informations on structure.
@@ -12,14 +8,6 @@ sInt32        fd;   // stored file-descriptor, to open/close and read/seek when 
 // global variables to count required loader informations regarding paging and falults.
 volatile uInt32 page_fault_count = 0;   // number of page faults encountered by loader.
 volatile uInt32 page_alloc_count = 0;   // number of times new page was allocated for .
-
-// To display exceptions and exiting at runtime defined macros  are to be used along
-// if statements or assertions to make it easer to log exceptions and exit at fatal 
-// flaw. some extra MACROS for safe free calls for pointers
-#define ERROR(message, x) { printf("%s\n", message);  }     // to display error message.
-#define FATAL(message, x) { ERROR(message, x); exit(x); }   // to display & exit fatal.
-#define CFARF(message, f) { close(f); FATAL(message,-1);}   // to close file and raise.
-#define SFREE(pointer) if(pointer){ free(pointer); }        // to clean allocated memory.
 
 // helper masking bits specifically for page alignment and retreiving offset of address.
 // these constants are only viable for page size = 0x1000 ie size=4kB
@@ -100,7 +88,7 @@ void load_and_run_elf(char* elf_executable_i386_mle)
 
     // read all segments and store header for that segments for further use in programme.
     for (uInt32 i = 0; i < ehdr->e_phnum; i++){
-        int phdr_status = read(fd, phdr + (i*elf32_phdr_size), elf32_phdr_size);
+        int phdr_status = read(fd, &phdr[i], elf32_phdr_size);
         if (phdr_status != elf32_phdr_size) CFARF("[ERROR] failed to read Elf32_Phdr*.", fd);
     }
     
@@ -126,7 +114,17 @@ void load_and_run_elf(char* elf_executable_i386_mle)
     // then allocate exactly one page with provided base = VIR_PAGE_ADDR and bound = 0x1000
     // base = VIR_PAGE_ADDR as in i386, VIR and PHY ADDR are considerd same and within LIMIT
     
+    // createa a segmentaion fault handler and assign it to sigsegv, to handle segmentation.
+    struct sigaction sa; memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = segmentation_fault_handler;
+    sa.sa_flags = SA_SIGINFO; sigemptyset(&sa.sa_mask);
 
+    if (sigaction(SIGSEGV, &sa, NULL) == -1)
+        FATAL("[ERROR] sigaction failed failed to assign function for SIG SEGMENTATION.", -1);
 
+    // construct payload/hook to funstion int _start(void) { ... } to execute the payload.
+    sInt32 (*_start)(void) = (sInt32 (*)(void))((void*)ehdr->e_entry);
     printf("User _start return value = %d\n", _start());
+    printf("TOTAL PAGE FAULts: %d\n", page_fault_count);
+    printf("TOTAL PAGE ALLOCS: %d\n", page_alloc_count);
 }
