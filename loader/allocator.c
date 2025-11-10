@@ -45,12 +45,18 @@ uInt32 allocate_page(uInt32 vaddr){
 
         if (mprotect((void*)vaddr_base, 0x1000, protection) == -1)
             CFARF("[ERROR] protection for newly allocated page failed to add defined permissions.", fd);
+        
 
         isallocated = 0x0001;
-        if (isallocated == 1)
-            page_inter_frags += (0x1000 - phdr[i].p_memsz % 0x1000);
-    }
 
+        uInt32 page_index = (vaddr_base - phdr[i].p_vaddr) / 0x1000;
+        uInt32 filled_bit = phdr[i].p_memsz - 0x1000*page_index;
+               filled_bit = (0x1000*(page_index + 1) <= phdr[i].p_memsz) ? 0x1000 : filled_bit; 
+        
+        if (isallocated == 1)
+            page_inter_frags += 0x1000 - filled_bit;
+    }
+    
     if (isallocated == 0)
         CFARF("[ERROR] allocation not possible for program, element not present in address space.", fd);
 

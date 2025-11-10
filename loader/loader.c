@@ -128,7 +128,7 @@ void load_and_run_elf(char* elf_executable_i386_mle)
     sInt32 (*_start)(void) = (sInt32 (*)(void))((void*)ehdr->e_entry);
     printf("User _start return value = %d\n", _start());
 
-    DEBUG(("total PAGE FAULTS: %d  \n", page_fault_count));
-    DEBUG(("total PAGE ALLOCS: %d  \n", page_alloc_count));
-    DEBUG(("total IN-FRAGMENT: %dKB\n", page_inter_frags/0x0400));
+    DEBUG(("total PAGE FAULTS: %d    \n", page_fault_count));
+    DEBUG(("total PAGE ALLOCS: %d    \n", page_alloc_count));
+    DEBUG(("total IN-FRAGMENT: %.3fKB\n", page_inter_frags/1024.0));
 }
