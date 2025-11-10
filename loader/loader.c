@@ -130,5 +130,5 @@ void load_and_run_elf(char* elf_executable_i386_mle)
 
     DEBUG(("total PAGE FAULTS: %d  \n", page_fault_count));
     DEBUG(("total PAGE ALLOCS: %d  \n", page_alloc_count));
-    DEBUG(("total IN-FRAGMENT: %dKB\n", page_inter_frags/0x1000));
+    DEBUG(("total IN-FRAGMENT: %dKB\n", page_inter_frags/0x0400));
 }
